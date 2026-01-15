@@ -79,9 +79,8 @@
             const scaleW = screenW / stageWidth;
             const scaleH = screenH / stageHeight;
             
-            // 使用 Math.max 确保图片铺满全屏（Cover模式），或者用 Math.min 确保图片完整显示（Contain模式）
-            // 这里建议用 Math.min 保证邀请函内容不被裁剪
-            currentScale = Math.min(scaleW, scaleH);
+            // 使用 Math.max 确保图片铺满全屏（Cover模式），消除黑边
+            currentScale = Math.max(scaleW, scaleH);
             
             if (currentScale < 0.01) currentScale = 0.1; 
             
