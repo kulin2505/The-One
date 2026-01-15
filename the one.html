@@ -77,11 +77,12 @@
             const scaleW = screenW / stageWidth;
             const scaleH = screenH / stageHeight;
             currentScale = Math.min(scaleW, scaleH);
+            if (currentScale < 0.01) currentScale = 0.1; // 防止比例过小导致不可见
             stage.style.transform = `scale(${currentScale})`;
             stage.style.opacity = 1;
         }
         window.addEventListener('resize', resizeStage);
-        resizeStage();
+        // resizeStage() moved to window.load
 
 
         // --- 2. 增强版烟花逻辑 (去掉了Heart) ---
@@ -99,10 +100,46 @@
             '#FFFFFF'  // 纯白闪烁
         ];
 
+        let textParticles = [];
+        const mouse = { x: null, y: null, radius: 100 };
+
+        class TextParticle {
+            constructor(x, y, color) {
+                this.x = Math.random() * stageWidth;
+                this.y = Math.random() * stageHeight;
+                this.baseX = x;
+                this.baseY = y;
+                this.color = color;
+                this.size = 3.5;
+                this.density = (Math.random() * 30) + 10;
+            }
+            draw() {
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            update() {
+                let dx = mouse.x - this.x;
+                let dy = mouse.y - this.y;
+                let distance = Math.sqrt(dx * dx + dy * dy);
+                if (distance < mouse.radius) {
+                    let force = (mouse.radius - distance) / mouse.radius;
+                    let directionX = (dx / distance) * force * this.density;
+                    let directionY = (dy / distance) * force * this.density;
+                    this.x -= directionX;
+                    this.y -= directionY;
+                } else {
+                    this.x += (this.baseX - this.x) * 0.1;
+                    this.y += (this.baseY - this.y) * 0.1;
+                }
+            }
+        }
+
         // 形状列表 (已移除 heart)
         const shapes = ['circle', 'star', 'ring', 'double'];
 
-        class Particle {
+        class FireworkParticle {
             constructor(x, y, shapeType, specialColor = null) {
                 this.x = x;
                 this.y = y;
@@ -184,31 +221,64 @@
             if (shape === 'double') {
                 // 外层
                 for (let i = 0; i < 150; i++) {
-                    particles.push(new Particle(x, y, 'circle')); 
+                    particles.push(new FireworkParticle(x, y, 'circle')); 
                 }
                 // 内层
                 const innerColor = '#FFFFFF';
                 for (let i = 0; i < 100; i++) {
-                    particles.push(new Particle(x, y, 'double_inner', innerColor));
+                    particles.push(new FireworkParticle(x, y, 'double_inner', innerColor));
                 }
             } else if (shape === 'ring') {
                 particleCount = 250; 
                 for (let i = 0; i < particleCount; i++) {
-                    particles.push(new Particle(x, y, shape));
+                    particles.push(new FireworkParticle(x, y, shape));
                 }
             } else {
                 particleCount = 220;
                 for (let i = 0; i < particleCount; i++) {
-                    particles.push(new Particle(x, y, shape));
+                    particles.push(new FireworkParticle(x, y, shape));
                 }
             }
         }
+
+        function initTextParticles() {
+            textParticles = [];
+            ctx.fillStyle = 'white';
+            const fontSize = 120;
+            ctx.font = `bold ${fontSize}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            
+            const text = "THE ONE";
+            ctx.fillText(text, stageWidth / 2, stageHeight / 2 - 100);
+            
+            const imageData = ctx.getImageData(0, 0, stageWidth, stageHeight);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            const gap = 8;
+            for (let y = 0; y < imageData.height; y += gap) {
+                for (let x = 0; x < imageData.width; x += gap) {
+                    if (imageData.data[(y * 4 * imageData.width) + (x * 4) + 3] > 128) {
+                        const color = colors[Math.floor(Math.random() * colors.length)];
+                        textParticles.push(new TextParticle(x, y, color));
+                    }
+                }
+            }
+        }
+        window.addEventListener('load', () => {
+            console.log("Stage Initializing...");
+            resizeStage();
+            initTextParticles();
+            animate();
+            stage.style.opacity = 1;
+        });
 
         function animate() {
             // 拖尾
             ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+            // 烟花粒子
             particles.forEach((particle, index) => {
                 if (particle.alpha > 0) {
                     particle.update();
@@ -217,9 +287,16 @@
                     particles.splice(index, 1);
                 }
             });
+
+            // 文字粒子 (点点字体)
+            textParticles.forEach(p => {
+                p.update();
+                p.draw();
+            });
+
             requestAnimationFrame(animate);
         }
-        animate();
+        // animate() moved to window.load
 
 
         // --- 3. 交互逻辑 ---
@@ -233,21 +310,29 @@
         }
 
         function handleInteraction(e) {
-            e.preventDefault(); 
+            let coords;
             if (e.type.includes('touch')) {
-                for (let i = 0; i < e.touches.length; i++) {
-                    const touch = e.touches[i];
-                    const mockEvent = { clientX: touch.clientX, clientY: touch.clientY };
-                    const coords = getRelativeCoordinates(mockEvent);
-                    if(coords.x >= 0 && coords.x <= stageWidth && coords.y >= 0 && coords.y <= stageHeight) {
-                        createFirework(coords.x, coords.y);
-                    }
-                }
+                if (!e.touches || e.touches.length === 0) return;
+                const touch = e.touches[0];
+                const mockEvent = { clientX: touch.clientX, clientY: touch.clientY };
+                coords = getRelativeCoordinates(mockEvent);
             } else {
-                const coords = getRelativeCoordinates(e);
+                coords = getRelativeCoordinates(e);
+            }
+
+            if(coords && coords.x >= 0 && coords.x <= stageWidth && coords.y >= 0 && coords.y <= stageHeight) {
+                mouse.x = coords.x;
+                mouse.y = coords.y;
                 createFirework(coords.x, coords.y);
             }
         }
+        
+        // 增加鼠标移动监听，以便点点字体在非点击时也能互动
+        window.addEventListener('mousemove', (e) => {
+            const coords = getRelativeCoordinates(e);
+            mouse.x = coords.x;
+            mouse.y = coords.y;
+        });
 
         window.addEventListener('mousedown', handleInteraction);
         window.addEventListener('touchstart', handleInteraction, {passive: false});
